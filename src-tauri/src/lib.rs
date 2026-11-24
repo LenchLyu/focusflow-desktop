@@ -4,9 +4,12 @@ pub mod error;
 pub mod model;
 pub mod pomodoro;
 pub mod repository;
+mod tray;
+#[cfg(target_os = "windows")]
+mod window_opacity;
 
 use error::{Error, Result};
-use model::{Command, Pulse, Query, Workspace};
+use model::{Command, MiniView, Pulse, Query, TaskTracking, Workspace};
 use repository::{Repository, TimerEvent};
 use std::{
     path::PathBuf,
@@ -16,11 +19,16 @@ use std::{
     },
     time::Duration,
 };
-use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewWindow, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, RunEvent, WebviewWindow, WebviewWindowBuilder,
+};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_notification::NotificationExt;
 
 type Reply<T> = std::result::Result<T, String>;
+const MAIN: &str = "main";
+const MINI: &str = "mini";
+const LAUNCHER: &str = "launcher";
 
 struct AppState {
     repository: Mutex<Option<Repository>>,
@@ -54,9 +62,11 @@ fn data_path(app: &AppHandle) -> Result<PathBuf> {
 
 fn timer_event(app: &AppHandle, event: TimerEvent) {
     if event.sound {
-        if let Some(window) = app
-            .get_webview_window("main")
-            .filter(|window| window.is_visible().unwrap_or(false))
+        if let Some(window) = [MINI, MAIN, LAUNCHER]
+            .into_iter()
+            .filter_map(|label| app.get_webview_window(label))
+            .find(is_presented)
+            .or_else(|| app.get_webview_window(MAIN))
         {
             if let Err(error) = window.emit("timer-chime", ()) {
                 eprintln!("FocusFlow chime: {error}");
@@ -98,8 +108,8 @@ fn with_repository<T>(
     result
 }
 
-fn from_main(window: &WebviewWindow) -> Reply<()> {
-    if window.label() == "main" {
+fn from_window(window: &WebviewWindow, label: &str) -> Reply<()> {
+    if window.label() == label {
         Ok(())
     } else {
         Err(Error::User("无法验证操作来源。").ipc())
@@ -117,14 +127,14 @@ fn workspace_read(
     app: AppHandle,
     query: serde_json::Value,
 ) -> Reply<Workspace> {
-    from_main(&window)?;
+    from_window(&window, MAIN)?;
     let query: Query = input(query)?;
     with_repository(&app, |repo, now| repo.read(query, now)).map_err(Error::ipc)
 }
 
 #[tauri::command]
 fn workspace_pulse(window: WebviewWindow, app: AppHandle) -> Reply<Pulse> {
-    from_main(&window)?;
+    from_window(&window, MAIN)?;
     with_repository(&app, |repo, now| repo.pulse(now)).map_err(Error::ipc)
 }
 
@@ -134,14 +144,80 @@ fn workspace_command(
     app: AppHandle,
     command: serde_json::Value,
 ) -> Reply<()> {
-    from_main(&window)?;
     let command: Command = input(command)?;
+    let allowed_in_mini = matches!(
+        command,
+        Command::Start {
+            task_id: None,
+            count: 1,
+            ..
+        } | Command::Advance { .. }
+            | Command::Interrupt { .. }
+    );
+    if window.label() != MINI || !allowed_in_mini {
+        from_window(&window, MAIN)?;
+    }
     with_repository(&app, |repo, now| repo.command(command, now)).map_err(Error::ipc)
 }
 
 #[tauri::command]
+fn task_tracking(window: WebviewWindow, app: AppHandle, id: String) -> Reply<TaskTracking> {
+    from_window(&window, MAIN)?;
+    with_repository(&app, |repo, _| repo.tracking(&id)).map_err(Error::ipc)
+}
+
+#[tauri::command]
+fn mini_read(window: WebviewWindow, app: AppHandle) -> Reply<MiniView> {
+    from_window(&window, MINI)?;
+    with_repository(&app, |repo, now| repo.mini(now)).map_err(Error::ipc)
+}
+
+#[tauri::command]
+async fn set_mini_mode(window: WebviewWindow, app: AppHandle, enabled: bool) -> Reply<()> {
+    from_window(&window, if enabled { MAIN } else { MINI })?;
+    if enabled {
+        show_mini(&app)
+    } else {
+        show_main(&app)
+    }
+    .map_err(Error::ipc)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum LauncherAction {
+    Collapse,
+    OpenMain,
+    OpenMini,
+    Dismiss,
+}
+
+#[tauri::command]
+async fn launcher_action(
+    window: WebviewWindow,
+    app: AppHandle,
+    action: LauncherAction,
+) -> Reply<()> {
+    let label = window.label();
+    match action {
+        LauncherAction::Collapse if matches!(label, MAIN | MINI) => show_launcher(&app, &window),
+        LauncherAction::OpenMain if label == LAUNCHER => show_main(&app),
+        LauncherAction::OpenMini if label == LAUNCHER => show_mini(&app),
+        LauncherAction::Dismiss if label == LAUNCHER => dismiss_launcher(&app),
+        _ => Err(Error::User("无法验证操作来源。")),
+    }
+    .map_err(Error::ipc)
+}
+
+#[tauri::command]
+fn launcher_theme(window: WebviewWindow, app: AppHandle) -> Reply<model::Theme> {
+    from_window(&window, LAUNCHER)?;
+    with_repository(&app, |repo, _| Ok(repository::settings(&repo.db)?.theme)).map_err(Error::ipc)
+}
+
+#[tauri::command]
 async fn backup_export(window: WebviewWindow, app: AppHandle) -> Reply<bool> {
-    from_main(&window)?;
+    from_window(&window, MAIN)?;
     tauri::async_runtime::spawn_blocking(move || -> Result<bool> {
         with_repository(&app, |repo, _| backup::ensure_idle(repo))?;
         let chosen = app
@@ -172,7 +248,7 @@ async fn backup_export(window: WebviewWindow, app: AppHandle) -> Reply<bool> {
 
 #[tauri::command]
 async fn backup_restore(window: WebviewWindow, app: AppHandle) -> Reply<bool> {
-    from_main(&window)?;
+    from_window(&window, MAIN)?;
     tauri::async_runtime::spawn_blocking(move || -> Result<bool> {
         with_repository(&app, |repo, _| backup::ensure_idle(repo))?;
         let chosen = app
@@ -207,24 +283,96 @@ async fn backup_restore(window: WebviewWindow, app: AppHandle) -> Reply<bool> {
     .map_err(Error::ipc)
 }
 
-fn show_main(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
-    }
+fn is_presented(window: &WebviewWindow) -> bool {
+    window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false)
 }
 
-fn start(app: &AppHandle) -> Result<()> {
-    let mut repository = Repository::open(&data_path(app)?)?;
-    let first_event = repository.sync(model::now())?;
-    let running = Arc::new(AtomicBool::new(true));
-    app.manage(AppState {
-        repository: Mutex::new(Some(repository)),
-        running: running.clone(),
-    });
+fn show_window(window: &WebviewWindow) -> Result<()> {
+    window
+        .show()
+        .map_err(|_| Error::User("无法显示 FocusFlow 窗口。"))?;
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+    Ok(())
+}
 
-    let config = &app.config().app.windows[0];
+fn switch_window(source: &WebviewWindow, target: &WebviewWindow) -> Result<()> {
+    show_window(target)?;
+    if source.hide().is_err() {
+        let _ = target.hide();
+        return Err(Error::User("无法切换 FocusFlow 窗口。"));
+    }
+    Ok(())
+}
+
+fn show_main(app: &AppHandle) -> Result<()> {
+    let main = app
+        .get_webview_window(MAIN)
+        .ok_or(Error::User("无法找到 FocusFlow 主窗口。"))?;
+    show_window(&main)?;
+    if let Some(mini) = app.get_webview_window(MINI) {
+        mini.hide().map_err(|_| Error::User("无法隐藏悬浮小窗。"))?;
+    }
+    Ok(())
+}
+
+fn show_mini(app: &AppHandle) -> Result<()> {
+    let main = app
+        .get_webview_window(MAIN)
+        .ok_or(Error::User("无法找到 FocusFlow 主窗口。"))?;
+    let mini = match app.get_webview_window(MINI) {
+        Some(window) => window,
+        None => build_window(app, MINI)?,
+    };
+    switch_window(&main, &mini)?;
+    #[cfg(target_os = "windows")]
+    window_opacity::apply(&mini);
+    Ok(())
+}
+
+fn launcher_window(app: &AppHandle, anchor: &WebviewWindow) -> Result<WebviewWindow> {
+    if let Some(window) = app.get_webview_window(LAUNCHER) {
+        return Ok(window);
+    }
+    let launcher = build_window(app, LAUNCHER)?;
+    if let (Ok(Some(monitor)), Ok(size)) = (anchor.current_monitor(), launcher.outer_size()) {
+        let area = monitor.work_area();
+        let margin = (16.0 * monitor.scale_factor()).round() as u32;
+        let x = area.position.x + area.size.width.saturating_sub(size.width + margin) as i32;
+        let y = area.position.y + area.size.height.saturating_sub(size.height + margin) as i32;
+        let _ = launcher.set_position(PhysicalPosition::new(x, y));
+    }
+    Ok(launcher)
+}
+
+fn show_launcher(app: &AppHandle, source: &WebviewWindow) -> Result<()> {
+    switch_window(source, &launcher_window(app, source)?)
+}
+
+fn dismiss_launcher(app: &AppHandle) -> Result<()> {
+    if ![MAIN, MINI]
+        .into_iter()
+        .filter_map(|label| app.get_webview_window(label))
+        .any(|window| is_presented(&window))
+    {
+        show_main(app)?;
+    }
+    if let Some(launcher) = app.get_webview_window(LAUNCHER) {
+        launcher
+            .hide()
+            .map_err(|_| Error::User("无法关闭悬浮启动器。"))?;
+    }
+    Ok(())
+}
+
+fn build_window(app: &AppHandle, label: &str) -> Result<WebviewWindow> {
+    let config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|config| config.label == label)
+        .ok_or(Error::User("找不到 FocusFlow 窗口配置。"))?;
     let dev_origin = app.config().build.dev_url.as_ref().map(|url| url.origin());
     WebviewWindowBuilder::from_config(app, config)
         .map_err(|_| Error::User("无法配置 FocusFlow 窗口。"))?
@@ -244,8 +392,22 @@ fn start(app: &AppHandle) -> Result<()> {
         .map_err(|error| {
             eprintln!("FocusFlow window: {error}");
             Error::User("无法创建 FocusFlow 窗口。")
-        })?;
-    show_main(app);
+        })
+}
+
+fn start(app: &AppHandle) -> Result<()> {
+    let mut repository = Repository::open(&data_path(app)?)?;
+    let first_event = repository.sync(model::now())?;
+    let running = Arc::new(AtomicBool::new(true));
+    app.manage(AppState {
+        repository: Mutex::new(Some(repository)),
+        running: running.clone(),
+    });
+    build_window(app, MAIN)?;
+    if let Err(error) = tray::install(app) {
+        eprintln!("FocusFlow tray: {error}");
+    }
+    show_main(app)?;
     if let Some(event) = first_event {
         timer_event(app, event);
     }
@@ -273,7 +435,7 @@ fn start(app: &AppHandle) -> Result<()> {
 pub fn run() {
     let application = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            show_main(app)
+            let _ = show_main(app);
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -281,6 +443,11 @@ pub fn run() {
             workspace_read,
             workspace_pulse,
             workspace_command,
+            task_tracking,
+            mini_read,
+            set_mini_mode,
+            launcher_action,
+            launcher_theme,
             backup_export,
             backup_restore
         ])
@@ -296,7 +463,21 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if window.label() != "main" {
+            if window.label() == LAUNCHER {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = dismiss_launcher(window.app_handle());
+                }
+                return;
+            }
+            if window.label() == MINI {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = show_main(window.app_handle());
+                }
+                return;
+            }
+            if window.label() != MAIN {
                 return;
             }
             match event {
@@ -309,6 +490,15 @@ pub fn run() {
                     let _ = window.hide();
                 }
                 #[cfg(target_os = "windows")]
+                tauri::WindowEvent::CloseRequested { api, .. }
+                    if tray::is_available(window.app_handle()) =>
+                {
+                    api.prevent_close();
+                    if let Err(error) = window.hide() {
+                        eprintln!("FocusFlow hide to tray: {error}");
+                    }
+                }
+                #[cfg(target_os = "windows")]
                 tauri::WindowEvent::Destroyed => window.app_handle().exit(0),
                 _ => {}
             }
@@ -318,10 +508,9 @@ pub fn run() {
     match application {
         Ok(application) => application.run(|app, event| match event {
             #[cfg(target_os = "macos")]
-            RunEvent::Reopen {
-                has_visible_windows: false,
-                ..
-            } => show_main(app),
+            RunEvent::Reopen { .. } => {
+                let _ = show_main(app);
+            }
             RunEvent::Exit => {
                 if let Some(state) = app.try_state::<AppState>() {
                     state.running.store(false, Ordering::Release);

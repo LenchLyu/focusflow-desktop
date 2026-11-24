@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
-import { Activity, AlertCircle, Check, Circle, LayoutGrid, Pencil, Trash2, X, type LucideIcon } from 'lucide-react';
+import { Activity, AlertCircle, ChartLine, Check, Circle, LayoutGrid, Pencil, Trash2, X, type LucideIcon } from 'lucide-react';
 import { dayAtNoon, type Command, type DayData, type Task } from '../shared/model';
 
 export type Run = (command: Command) => Promise<boolean>;
@@ -24,14 +24,14 @@ export function IconButton({ icon: Icon, label, ...props }: ButtonHTMLAttributes
   return <button type="button" className="icon-button" aria-label={label} title={label} {...props}><Icon size={17} aria-hidden /></button>;
 }
 
-export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function Modal({ title, onClose, children, className = '' }: { title: string; onClose: () => void; children: ReactNode; className?: string }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current!;
     dialog.showModal();
     return () => dialog.close();
   }, []);
-  return <dialog ref={ref} className="modal" aria-label={title} onCancel={(event) => { event.preventDefault(); onClose(); }}>
+  return <dialog ref={ref} className={`modal ${className}`} aria-label={title} onCancel={(event) => { event.preventDefault(); onClose(); }}>
     <header><h2>{title}</h2><IconButton icon={X} label="关闭" onClick={onClose} /></header>
     {children}
   </dialog>;
@@ -51,11 +51,18 @@ export function DayActivity({ data }: { data: DayData }) {
   </details>;
 }
 
-export function ReadOnlyTasks({ data, edit, remove }: { data: DayData; edit?: (task: Task) => void; remove?: (task: Task) => void }) {
+export function TaskRange({ task }: { task: Task }) {
+  if (!task.end_date) return null;
+  return <div className="task-range"><span>{task.scheduled_date} 至 {task.end_date}</span>
+    <span>进度 {task.progress ?? 0}%</span></div>;
+}
+
+export function ReadOnlyTasks({ data, edit, remove, track }: { data: DayData; edit?: (task: Task) => void; remove?: (task: Task) => void; track?: (task: Task) => void }) {
   return <ul className="history-tasks">{data.tasks.map((task) => <li key={task.id}>
     {task.status === 'completed' ? <Check size={16} /> : <Circle size={15} />}
-    <div><strong>{task.title}</strong>{task.description && <small>{task.description}</small>}</div>
+    <div><strong>{task.title}</strong>{task.description && <small>{task.description}</small>}<TaskRange task={task} /></div>
     <small>{({ completed: '已完成', unfinished: '未完成', todo: '待完成', in_progress: '进行中' })[task.status]}</small>
+    {track && task.end_date && <IconButton icon={ChartLine} label={`跟踪进度：${task.title}`} onClick={() => track(task)} />}
     {edit && <IconButton icon={Pencil} label={`编辑：${task.title}`} onClick={() => edit(task)} />}
     {remove && <IconButton icon={Trash2} label={`删除：${task.title}`} onClick={() => remove(task)} />}
   </li>)}</ul>;

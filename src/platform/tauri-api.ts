@@ -17,6 +17,9 @@ export const tauriApi: DesktopApi = {
   read: (query) => call('workspace_read', { query }),
   pulse: () => call('workspace_pulse'),
   command: (command) => call('workspace_command', { command }),
+  tracking: (id) => call('task_tracking', { id }),
+  mini: { read: () => call('mini_read'), setMode: (enabled) => call('set_mini_mode', { enabled }) },
+  launcher: { act: (action) => call('launcher_action', { action }), theme: () => call('launcher_theme') },
   backup: (action) => call(action === 'export' ? 'backup_export' : 'backup_restore'),
   onChime(play) {
     let cancelled = false;

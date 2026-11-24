@@ -226,7 +226,7 @@ fn can_confirm(db: &Connection, session: &Session) -> Result<bool> {
     };
     Ok(db
         .query_row(
-            "SELECT completed_pomodoros>=planned_pomodoros FROM tasks WHERE id=?",
+            "SELECT end_date IS NOT NULL OR completed_pomodoros>=planned_pomodoros FROM tasks WHERE id=?",
             [id],
             |row| row.get(0),
         )
@@ -259,13 +259,13 @@ pub fn resolve(
             "UPDATE tasks SET status='completed',completed_at=?,updated_at=? WHERE id=?",
             params![now, now, task],
         )?;
-        let scheduled: String = db.query_row(
-            "SELECT scheduled_date FROM tasks WHERE id=?",
+        let deadline: String = db.query_row(
+            "SELECT COALESCE(end_date,scheduled_date) FROM tasks WHERE id=?",
             [task],
             |row| row.get(0),
         )?;
-        if scheduled.as_str() < today {
-            store_record(db, &scheduled, now)?;
+        if deadline.as_str() < today {
+            store_record(db, &deadline, now)?;
         }
     }
     db.execute(

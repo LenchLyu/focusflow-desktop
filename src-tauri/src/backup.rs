@@ -18,7 +18,7 @@ use std::{
 };
 use tempfile::NamedTempFile;
 
-const TABLES: [&str; 7] = [
+const TABLES: [&str; 8] = [
     "tasks",
     "daily_records",
     "pomodoro_sessions",
@@ -26,6 +26,7 @@ const TABLES: [&str; 7] = [
     "pomodoro_interruptions",
     "thought_notes",
     "app_settings",
+    "task_progress",
 ];
 const MAX_BYTES: u64 = 100 * 1024 * 1024;
 const INVALID: Error = Error::User("无法恢复此备份。请选择本应用导出的完整 JSON 文件。");
@@ -76,7 +77,7 @@ pub fn snapshot(db: &Connection) -> Result<Value> {
             .collect::<rusqlite::Result<Vec<Value>>>()?;
         data.insert(table.into(), Value::Array(rows));
     }
-    Ok(serde_json::json!({"format":"focusflow-backup","version":1,"data":data}))
+    Ok(serde_json::json!({"format":"focusflow-backup","version":2,"data":data}))
 }
 
 fn assert_json_file(path: &Path) -> Result<()> {
@@ -148,8 +149,11 @@ fn validate_row(
     if row.len() != columns.len() {
         return Err(INVALID);
     }
-    for key in ["date", "scheduled_date", "local_date"] {
-        if let Some(date) = row.get(key) {
+    for key in ["date", "scheduled_date", "local_date", "end_date"] {
+        if let Some(date) = row
+            .get(key)
+            .filter(|date| key != "end_date" || !date.is_null())
+        {
             parse_date(date.as_str().ok_or(INVALID)?).map_err(|_| INVALID)?;
         }
     }
@@ -206,8 +210,9 @@ pub fn ensure_idle(repo: &Repository) -> Result<()> {
 
 pub fn restore(repo: &mut Repository, backup: Value, now: i64) -> Result<()> {
     ensure_idle(repo)?;
+    let version = backup.get("version").and_then(Value::as_u64);
     if backup.get("format").and_then(Value::as_str) != Some("focusflow-backup")
-        || backup.get("version").and_then(Value::as_u64) != Some(1)
+        || !matches!(version, Some(1 | 2))
     {
         return Err(INVALID);
     }
@@ -217,7 +222,13 @@ pub fn restore(repo: &mut Repository, backup: Value, now: i64) -> Result<()> {
         .ok_or(INVALID)?;
     let mut entries = Vec::new();
     for table in TABLES {
-        let columns = columns(&repo.db, table)?;
+        if version == Some(1) && table == "task_progress" {
+            continue;
+        }
+        let mut columns = columns(&repo.db, table)?;
+        if version == Some(1) && table == "tasks" {
+            columns.retain(|column| column.name != "end_date");
+        }
         let rows = data.get(table).and_then(Value::as_array).ok_or(INVALID)?;
         let values = rows
             .iter()
@@ -262,6 +273,15 @@ pub fn restore(repo: &mut Repository, backup: Value, now: i64) -> Result<()> {
           OR (s.status='focus_running' AND EXISTS (SELECT 1 FROM pomodoro_cycles c WHERE c.session_id=s.id AND c.cycle_index=s.current_cycle)))",
           [], |row| row.get(0))?;
         if invalid_sessions {
+            return Err(INVALID);
+        }
+        let invalid_progress: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM task_progress p
+          JOIN tasks t ON t.id=p.task_id WHERE t.end_date IS NULL)",
+            [],
+            |row| row.get(0),
+        )?;
+        if invalid_progress {
             return Err(INVALID);
         }
         Ok(())

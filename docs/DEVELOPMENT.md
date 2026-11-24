@@ -11,6 +11,7 @@ FocusFlow 从本地日历待办规格出发，以今日待办为默认首页。�
 | 页面与使用反馈 | 实现独立专注页、番茄想法、任务完成确认、主题、声音与系统通知开关，以及 JSON 备份和恢复。 |
 | 0.10 Windows 发布 | 运行 TypeScript 检查与 esbuild 构建、Node 业务测试和 Playwright Electron 测试。用 Electron Builder 生成 NSIS x64 安装包，通过 GitHub Release 分发。 |
 | 0.11 Tauri 迁移 | 复用 React 界面及 SQLite 契约，改用 Rust 后端。准备 Windows x64 NSIS 和 macOS Universal DMG，迁移过程与验收见[迁移文档](TAURI_MIGRATION.md)。 |
+| 0.12 跨平台发布 | 新增多天任务跟踪、悬浮计时小窗和系统托盘。GitHub Actions 从同一源码构建 Windows x64 和 macOS Universal 安装包，使用 WebView2 测试 Windows 操作流程，并用 `lipo` 核对 Mac 应用的两个架构。 |
 
 ## 关键实现
 
@@ -39,4 +40,4 @@ Tauri 前端由 esbuild 编译进 `dist/frontend/`。Windows 安装按当前用�
 
 分别在对应架构的 Mac 上验证拖入「应用程序」、启动、结束专注后的系统通知，以及关闭窗口和重新打开时的数据恢复。Mac 数据目录默认位于 `~/Library/Application Support/FocusFlow`。可以先在 Windows 导出 JSON 备份，再在 Mac 测试导入。
 
-面向普通用户发行时，在 Mac 上用 Developer ID 证书正式签名并完成 Apple 公证，再分发 Universal DMG。当前 macOS 方案待真机验收。[Apple 公证说明](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
+0.12 的 macOS Universal DMG 采用临时签名。Developer ID 正式签名和 Apple 公证可通过独立签名流程完成。[Apple 公证说明](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)

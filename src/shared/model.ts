@@ -32,15 +32,17 @@ export const taskInput = z.object({
   title, description: z.string().trim().max(2000), scheduled_date: dateKey,
   pomodoro_enabled: z.boolean(), planned_pomodoros: plan,
 });
-export type TaskInput = z.infer<typeof taskInput>;
+export type TaskInput = z.infer<typeof taskInput> & { end_date?: string | null };
 export type Task = Omit<TaskInput, 'pomodoro_enabled'> & {
   id: string; status: 'todo' | 'in_progress' | 'completed' | 'unfinished';
   pomodoro_enabled: 0 | 1; completed_pomodoros: number; sort_order: number;
+  progress?: number;
 };
 export type DayRecord = {
   date: string; finalized_at: number | null; total_tasks: number;
   completed_tasks: number; unfinished_tasks: number;
   total_completed_pomodoros: number; total_focus_seconds: number;
+  spanning_tasks?: number;
 };
 export type Thought = {
   id: string; local_date: string; session_id: string | null; content: string;
@@ -61,6 +63,11 @@ export type ActiveSession = Session & {
 export type Activity = { id: string; title: string; cycle_index: number; reason: string | null; ended_at: number; focus_seconds: number };
 export type DayData = { tasks: Task[]; thoughts: Thought[]; record: DayRecord; activity: Activity[] };
 export type Pulse = { now: number; today: string; session: ActiveSession | null };
+export type MiniView = Pulse & { theme: Settings['theme']; focusMinutes: number };
+export type TaskTracking = {
+  progress: number;
+  days: { date: string; percent: number | null; pomodoros: number; focus_seconds: number }[];
+};
 export type Workspace = Pulse & {
   todayData: DayData; selectedData: DayData; calendar: DayRecord[]; settings: Settings; dataPath: string;
 };
@@ -81,14 +88,20 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('resolve'), id, completed: z.boolean(), saveQuick: z.boolean().optional() }),
   z.object({ type: z.literal('settings'), settings: settingsSchema }),
 ]);
-export type Command = z.infer<typeof commandSchema>;
+export type Command = (Exclude<z.infer<typeof commandSchema>, { type: 'saveTask' }>) |
+  { type: 'saveTask'; id?: string; task: TaskInput } |
+  { type: 'setTaskProgress'; id: string; percent: number };
 export type Query = z.infer<typeof readRequest>;
 export type Result<T> = { ok: true; value: T } | { ok: false; message: string };
+export type LauncherAction = 'collapse' | 'openMain' | 'openMini' | 'dismiss';
 export type DesktopApi = {
   read: (query: Query) => Promise<Result<Workspace>>;
   pulse: () => Promise<Result<Pulse>>;
   command: (command: Command) => Promise<Result<void>>;
   backup: (action: 'export' | 'import') => Promise<Result<boolean>>;
   onChime: (play: () => void) => () => void;
+  tracking?: (id: string) => Promise<Result<TaskTracking>>;
+  mini?: { read: () => Promise<Result<MiniView>>; setMode: (enabled: boolean) => Promise<Result<void>> };
+  launcher?: { act: (action: LauncherAction) => Promise<Result<void>>; theme: () => Promise<Result<Settings['theme']>> };
 };
 declare global { interface Window { focusflow: DesktopApi } }

@@ -124,6 +124,10 @@ input[type='checkbox'], input[type='radio'] { accent-color: var(--accent); width
 .task-copy strong { font-size: 15px; font-weight: 650; }
 .is-complete .task-copy strong { text-decoration: line-through; color: var(--muted); }
 .task-copy p { color: var(--muted); margin-top: 2px; white-space: pre-wrap; }
+.task-range { display: flex; flex-wrap: wrap; gap: 2px 9px; margin-top: 3px; color: var(--muted); font-size: 12px; }
+.task-range span:last-child { color: var(--accent-text); font-weight: 600; }
+.task-dates { display: grid; gap: 10px; }
+.task-dates.multi { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .task-count { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 4px; margin-top: 5px; }
 .task-count button { display: inline-flex; align-items: center; gap: 4px; min-height: 23px; padding: 1px 5px; color: var(--quiet); background: transparent; border: 1px solid var(--line); border-radius: 6px; }
 .task-count button:hover, .task-count button[aria-checked='true'] { background: var(--wash); color: var(--accent-text); }
@@ -174,6 +178,7 @@ input[type='checkbox'], input[type='radio'] { accent-color: var(--accent); width
 .day-cell small i { width: 5px; height: 5px; opacity: .53; }
 .day-cell small.all-done { color: var(--accent-text); font-weight: 700; }
 .day-cell small.all-done i { opacity: 1; }
+.day-cell small.spanning-count { color: var(--accent-text); }
 .calendar-loading { min-height: 386px; padding: 18px; color: var(--muted); }
 .date-kind { color: var(--accent-text); font-size: 12px; font-weight: 650; }
 .date-panel h2 { font-size: 18px; margin-top: 6px; }
@@ -210,6 +215,7 @@ input[type='checkbox'], input[type='radio'] { accent-color: var(--accent); width
 
 .focus-window { min-height: 100vh; }
 .focus-top { padding: 16px 28px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); }
+.focus-top-actions { display: flex; align-items: center; gap: 4px; }
 .focus-layout { display: grid; grid-template-columns: minmax(0,1fr) 282px; align-items: stretch; min-height: calc(100vh - 67px); }
 .focus-main { padding: 28px 20px 30px; text-align: center; display: flex; align-items: center; flex-direction: column; min-width: 0; position: relative; }
 .recovered { color: var(--muted); font-size: 12px; margin: -6px 0 9px; }
@@ -229,6 +235,45 @@ input[type='checkbox'], input[type='radio'] { accent-color: var(--accent); width
 .focus-notes { background: var(--side); border-left: 1px solid var(--line); padding: 24px 16px; min-width: 0; }
 .focus-notes h2 { display: flex; align-items: center; gap: 7px; font-size: 16px; }
 .notes-toggle { display: none; }
+
+.tracking-heading { display: grid; gap: 3px; overflow-wrap: anywhere; }
+.tracking-heading p { color: var(--muted); font-size: 13px; }
+.tracking-bar { display: flex; align-items: center; gap: 11px; margin: 12px 0; font-variant-numeric: tabular-nums; }
+.tracking-bar progress { flex: 1; min-width: 0; height: 8px; accent-color: var(--accent); }
+.tracking-form { display: flex; align-items: end; gap: 8px; margin: 9px 0; }
+.tracking-form label { flex: 1; display: grid; gap: 4px; }
+.tracking-days { display: grid; margin-bottom: 12px; }
+.tracking-days li { display: flex; flex-wrap: wrap; gap: 3px 10px; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.tracking-days li span { color: var(--accent-text); font-size: 13px; }
+.tracking-error, .mini-error { color: var(--warn); }
+
+.mini-window { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 6px; padding: 6px 10px; }
+.mini-window > header { display: flex; gap: 8px; justify-content: space-between; align-items: center; padding-bottom: 3px; border-bottom: 1px solid var(--line); }
+.mini-window h1 { display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 1.3; letter-spacing: 0; }
+.mini-window h1 svg { color: var(--accent-text); }
+.mini-header-actions { display: flex; gap: 1px; }
+.mini-window .icon-button { width: 26px; height: 26px; }
+.mini-window .button { min-height: 25px; padding: 3px 8px; font-size: 12px; line-height: 1.3; }
+.mini-window .button svg { width: 14px; height: 14px; }
+.mini-idle, .mini-timer { display: grid; align-content: start; gap: 4px; }
+.mini-idle label { display: grid; gap: 4px; font-size: 12px; }
+.mini-idle input { padding: 5px 8px; font-size: 13px; }
+.mini-idle .button { justify-self: start; }
+.mini-timer { place-items: center; text-align: center; min-width: 0; }
+.mini-timer h2 { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.3; font-size: 14px; }
+.mini-status, .mini-loading { color: var(--muted); font-size: 12px; line-height: 1.3; }
+.mini-clock { font: 650 clamp(32px, 22vh, 59px)/1 var(--heading); font-variant-numeric: tabular-nums; color: var(--accent-text); }
+.mini-error { overflow-wrap: anywhere; font-size: 12px; }
+
+.launcher-bar { height: 100vh; display: flex; align-items: center; justify-content: space-between; gap: 3px; padding: 4px 6px; border: 1px solid var(--line); background: var(--surface); user-select: none; }
+.launcher-bar .button { min-height: 34px; gap: 4px; padding: 3px 5px; font-size: 12px; }
+.launcher-bar .button svg { width: 15px; }
+.launcher-bar .icon-button { width: 28px; height: 32px; }
+.launcher-grip { display: grid; place-items: center; flex: 0 0 20px; height: 34px; color: var(--quiet); cursor: grab; }
+.launcher-grip:active { cursor: grabbing; }
+.launcher-grip svg { pointer-events: none; }
+.launcher-grip-error { color: var(--warn); }
+.launcher-error { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .summary { margin-top: 25px; width: min(100%, 470px); }
 .summary-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; border-block: 1px solid var(--line); padding: 18px 0; }
 .summary-metrics strong { font-size: clamp(18px, 3vw, 28px); }
@@ -252,6 +297,12 @@ input[type='checkbox'], input[type='radio'] { accent-color: var(--accent); width
 .modal h2 { font-size: 21px; }
 .modal footer { display: flex; justify-content: end; gap: 8px; margin-top: 16px; }
 .modal p { overflow-wrap: anywhere; }
+.modal.mini-interrupt { width: calc(100% - 12px); max-width: 310px; max-height: calc(100dvh - 12px); padding: 6px 9px; border-radius: 10px; }
+.mini-interrupt > header { margin-bottom: 3px; }
+.mini-interrupt h2 { font-size: 14px; }
+.mini-interrupt .form { gap: 4px; }
+.mini-interrupt select, .mini-interrupt textarea { min-height: 25px; padding: 3px 6px; font-size: 12px; line-height: 1.4; }
+.mini-interrupt footer { margin-top: 2px; }
 .form { display: grid; gap: 12px; }
 .form > label { display: grid; gap: 4px; font-weight: 570; }
 .check-label, .form-line { display: flex; align-items: center; gap: 8px; }

@@ -6,6 +6,8 @@ use tempfile::NamedTempFile;
 use uuid::Uuid;
 
 pub const MIGRATION: &str = include_str!("migrations/001_init.sql");
+pub const TASK_TRACKING_MIGRATION: &str = include_str!("migrations/002_task_tracking.sql");
+const MIGRATIONS: [&str; 2] = [MIGRATION, TASK_TRACKING_MIGRATION];
 
 pub fn open(path: &Path) -> Result<Connection> {
     let parent = path.parent().ok_or(Error::User("本地数据目录无效。"))?;
@@ -20,29 +22,27 @@ pub fn open(path: &Path) -> Result<Connection> {
     db.busy_timeout(Duration::from_secs(3))?;
     db.execute_batch("PRAGMA locking_mode=EXCLUSIVE; PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL; BEGIN EXCLUSIVE; COMMIT;")?;
     let version = check_version(&db)?;
-    let marker = parent.join("tauri-migration-v1.done");
-    if previous && !marker.exists() {
+    if previous && version < MIGRATIONS.len() as i64 {
         save_snapshot(&db, parent)?;
     }
     let mode: String = db.query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))?;
     if mode != "wal" {
         return Err(Error::User("无法启用数据库日志，请检查数据目录。"));
     }
-    if version == 0 {
+    if version < MIGRATIONS.len() as i64 {
         let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        tx.execute_batch(MIGRATION)?;
-        tx.pragma_update(None, "user_version", 1)?;
+        for (index, sql) in MIGRATIONS.iter().enumerate().skip(version as usize) {
+            tx.execute_batch(sql)?;
+            tx.pragma_update(None, "user_version", index + 1)?;
+        }
         tx.commit()?;
-    }
-    if !marker.exists() {
-        fs::write(marker, b"FocusFlow Tauri schema 1\n")?;
     }
     Ok(db)
 }
 
 fn check_version(db: &Connection) -> Result<i64> {
     let version: i64 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if version > 1 {
+    if version > MIGRATIONS.len() as i64 {
         return Err(Error::User(
             "数据库来自较新版本，请使用新版 FocusFlow 打开。",
         ));
@@ -94,6 +94,8 @@ pub fn task(row: &Row<'_>) -> rusqlite::Result<Task> {
         title: row.get("title")?,
         description: row.get("description")?,
         scheduled_date: row.get("scheduled_date")?,
+        end_date: row.get("end_date")?,
+        progress: 0,
         status: row.get("status")?,
         pomodoro_enabled: row.get("pomodoro_enabled")?,
         planned_pomodoros: row.get("planned_pomodoros")?,
@@ -134,6 +136,7 @@ pub fn record(row: &Row<'_>) -> rusqlite::Result<DayRecord> {
         unfinished_tasks: row.get("unfinished_tasks")?,
         total_completed_pomodoros: row.get("total_completed_pomodoros")?,
         total_focus_seconds: row.get("total_focus_seconds")?,
+        spanning_tasks: 0,
     })
 }
 

@@ -56,9 +56,13 @@ impl Harness {
             .unwrap()
     }
     fn task(&mut self, title: &str, day: &str, count: i64) -> String {
+        self.planned_task(title, day, None, count)
+    }
+
+    fn planned_task(&mut self, title: &str, day: &str, end: Option<&str>, count: i64) -> String {
         self.command(
             json!({"type":"saveTask","task":{"title":title,"description":"","scheduled_date":day,
-            "pomodoro_enabled":true,"planned_pomodoros":count}}),
+            "end_date":end,"pomodoro_enabled":true,"planned_pomodoros":count}}),
         )
         .unwrap();
         self.read(Some(day.into()))
@@ -80,7 +84,7 @@ fn sqlite_schema_pragmas_and_exclusive_locking() {
     let path = dir.path().join("lock.sqlite3");
     let first = db::open(&path).unwrap();
     for (pragma, expected) in [
-        ("user_version", 1),
+        ("user_version", 2),
         ("foreign_keys", 1),
         ("synchronous", 2),
         ("busy_timeout", 3000),
@@ -136,6 +140,7 @@ fn existing_database_is_snapshotted_and_newer_or_corrupt_databases_are_preserved
         .unwrap();
     source.execute_batch("PRAGMA journal_mode=WAL; PRAGMA user_version=1; INSERT INTO app_settings VALUES ('archive_origin','2026-11-23');").unwrap();
     drop(source);
+    fs::write(dir.path().join("tauri-migration-v1.done"), b"schema 1").unwrap();
     let upgraded = db::open(&path).unwrap();
     let snapshots: Vec<_> = fs::read_dir(dir.path())
         .unwrap()
@@ -144,6 +149,12 @@ fn existing_database_is_snapshotted_and_newer_or_corrupt_databases_are_preserved
         .collect();
     assert_eq!(snapshots.len(), 1);
     let snapshot = Connection::open(snapshots[0].path()).unwrap();
+    assert_eq!(
+        snapshot
+            .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+            .unwrap(),
+        1
+    );
     assert_eq!(
         snapshot
             .query_row(
@@ -168,7 +179,7 @@ fn existing_database_is_snapshotted_and_newer_or_corrupt_databases_are_preserved
     let high = dir.path().join("newer.sqlite3");
     Connection::open(&high)
         .unwrap()
-        .execute_batch("PRAGMA user_version=2;")
+        .execute_batch("PRAGMA user_version=3;")
         .unwrap();
     let original = fs::read(&high).unwrap();
     assert!(db::open(&high).is_err());
@@ -313,8 +324,11 @@ fn backup_format_validation_and_transaction_rollback() {
     let reference = Connection::open_in_memory().unwrap();
     reference.execute_batch(db::MIGRATION).unwrap();
     reference
+        .execute_batch(db::TASK_TRACKING_MIGRATION)
+        .unwrap();
+    reference
         .execute(
-            "INSERT INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             params![
                 "81cf9968-d779-4914-923e-1c6f8d26d372",
                 "恢复后任务",
@@ -328,7 +342,8 @@ fn backup_format_validation_and_transaction_rollback() {
                 test.time,
                 test.time,
                 None::<i64>,
-                None::<i64>
+                None::<i64>,
+                None::<String>
             ],
         )
         .unwrap();
@@ -349,7 +364,7 @@ fn backup_format_validation_and_transaction_rollback() {
         "created_at":test.time, "updated_at":test.time
     }]);
     for bad in [
-        json!({"version":2}),
+        json!({"version":3}),
         missing_title,
         invalid_plan,
         missing_session,
@@ -357,12 +372,134 @@ fn backup_format_validation_and_transaction_rollback() {
         assert!(backup::restore(&mut test.repo, bad, test.time).is_err());
         assert_eq!(test.read(None).today_data.tasks[0].title, "备份前任务");
     }
-    backup::restore(&mut test.repo, fixture, test.time).unwrap();
+    let mut legacy = fixture;
+    legacy["version"] = json!(1);
+    legacy["data"]
+        .as_object_mut()
+        .unwrap()
+        .remove("task_progress");
+    legacy["data"]["tasks"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("end_date");
+    backup::restore(&mut test.repo, legacy, test.time).unwrap();
     assert_eq!(test.read(None).today_data.tasks[0].title, "恢复后任务");
     assert!(fs::read_dir(test._dir.path()).unwrap().flatten().any(|e| e
         .file_name()
         .to_string_lossy()
         .starts_with("before-restore-")));
+}
+
+#[test]
+fn multiday_tasks_track_daily_progress_and_allow_early_submission() {
+    let mut test = Harness::new();
+    let start = test.day();
+    let end = "2026-11-26";
+    let task = test.planned_task("整理多天任务", &start, Some(end), 4);
+    let overdue = test.planned_task("等到截止的任务", &start, Some(end), 1);
+    assert_eq!(test.read(None).today_data.record.spanning_tasks, 2);
+    assert_eq!(test.read(None).today_data.record.total_tasks, 0);
+    assert!(test
+        .read(Some("2026-11-27".into()))
+        .selected_data
+        .tasks
+        .is_empty());
+    assert!(test
+        .command(json!({"type":"setTaskProgress","id":task,"percent":101}))
+        .is_err());
+    for percent in [20, 35] {
+        test.command(json!({"type":"setTaskProgress","id":task,"percent":percent}))
+            .unwrap();
+    }
+    assert_eq!(test.repo.tracking(&task).unwrap().days.len(), 1);
+    test.elapse(1440);
+    assert_eq!(
+        test.read(None)
+            .today_data
+            .tasks
+            .iter()
+            .find(|item| item.id == task)
+            .unwrap()
+            .progress,
+        35
+    );
+    let settings = Settings {
+        focus_minutes: 1,
+        ..Settings::default()
+    };
+    test.command(json!({"type":"settings","settings":settings}))
+        .unwrap();
+    test.command(json!({"type":"start","taskId":task,"count":1}))
+        .unwrap();
+    let session = test.active().session.id;
+    test.elapse(1);
+    test.command(json!({"type":"advance","id":session}))
+        .unwrap();
+    assert!(test.active().can_confirm);
+    test.command(json!({"type":"resolve","id":session,"completed":false}))
+        .unwrap();
+    test.command(json!({"type":"setTaskProgress","id":task,"percent":65}))
+        .unwrap();
+    test.command(json!({"type":"setTaskProgress","id":task,"percent":100}))
+        .unwrap();
+    test.command(json!({"type":"setTaskProgress","id":task,"percent":100}))
+        .unwrap();
+    let tracking = test.repo.tracking(&task).unwrap();
+    assert_eq!(tracking.progress, 100);
+    assert_eq!(tracking.days[0].date, test.day());
+    assert_eq!(tracking.days[0].percent, Some(100));
+    assert_eq!(tracking.days[0].pomodoros, 1);
+    assert_eq!(tracking.days[1].percent, Some(35));
+    assert_eq!(
+        test.read(None)
+            .today_data
+            .tasks
+            .iter()
+            .find(|item| item.id == task)
+            .unwrap()
+            .end_date
+            .as_deref(),
+        Some(end)
+    );
+    test.command(json!({"type":"toggleTask","id":task}))
+        .unwrap();
+    assert_eq!(test.repo.tracking(&task).unwrap().progress, 65);
+    test.command(json!({"type":"setTaskProgress","id":task,"percent":100}))
+        .unwrap();
+
+    test.elapse(3 * 1440);
+    test.sync();
+    let ended = test.read(Some(end.into())).selected_data;
+    assert_eq!(ended.record.total_tasks, 2);
+    assert_eq!(ended.record.completed_tasks, 1);
+    assert_eq!(
+        ended
+            .tasks
+            .iter()
+            .find(|item| item.id == overdue)
+            .unwrap()
+            .status,
+        "unfinished"
+    );
+    assert!(test
+        .command(json!({"type":"setTaskProgress","id":overdue,"percent":100}))
+        .is_err());
+    assert_eq!(
+        test.repo.tracking(&task).unwrap().days[0].percent,
+        Some(100)
+    );
+
+    drop(test.repo);
+    let source = Connection::open(&test.path).unwrap();
+    let saved = backup::snapshot(&source).unwrap();
+    assert_eq!(saved["version"], 2);
+    let mut restored = Harness::new();
+    restored.time = test.time;
+    backup::restore(&mut restored.repo, saved, restored.time).unwrap();
+    let history = restored.repo.tracking(&task).unwrap();
+    assert_eq!(history.days[0].percent, Some(100));
+    assert_eq!(history.days[0].pomodoros, 1);
+    assert_eq!(history.days[1].percent, Some(35));
 }
 
 #[test]

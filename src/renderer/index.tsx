@@ -1,45 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AlertCircle, CalendarDays, Check, CircleCheck, Settings2 } from 'lucide-react';
+import { AlertCircle, CalendarDays, Check, CircleCheck, PanelTop, PictureInPicture2, Settings2 } from 'lucide-react';
 import { firstOfMonth, type ActiveSession, type Command, type Query, type Result, type Task, type Workspace } from '../shared/model';
 import { Calendar, Today } from './planner';
 import { Focus } from './focus';
 import { Settings } from './settings';
 import { FocusForm, TaskForm } from './tasks';
 import { Thoughts } from './thoughts';
+import { TrackingDialog } from './tracking';
+import { playChime, unwrap } from './runtime';
 import { Button, fullDate, Logo, Modal, type Run } from './ui';
 import './styles.css';
 
 type Page = 'today' | 'calendar' | 'settings';
 type Overlay = { kind: 'task' | 'remove' | 'focus'; task?: Task; title?: string } | { kind: 'notes' } |
-  { kind: 'interruptedQuick'; session: ActiveSession };
+  { kind: 'interruptedQuick'; session: ActiveSession } | { kind: 'tracking'; task: Task; editable: boolean };
 const pages = [ ['today', '今日待办', CircleCheck], ['calendar', '日历', CalendarDays], ['settings', '设置', Settings2] ] as const;
 const feedback: Partial<Record<Command['type'], string>> = {
   saveTask: '任务已保存', deleteTask: '任务已删除', interrupt: '已保存打断记录', settings: '设置已保存',
-  resolve: '专注记录已保存', saveInterruptedQuick: '任务已加入今日待办',
+  resolve: '专注记录已保存', saveInterruptedQuick: '任务已加入今日待办', setTaskProgress: '进度已保存',
 };
-
-function unwrap<T>(result: Result<T>) {
-  if (!result.ok) throw new Error(result.message);
-  return result.value;
-}
-
-function playChime() {
-  const context = new AudioContext();
-  const start = context.currentTime;
-  for (const [frequency, delay] of [[660, 0], [880, .16]]) {
-    const oscillator = context.createOscillator();
-    const volume = context.createGain();
-    oscillator.frequency.value = frequency;
-    volume.gain.setValueAtTime(.001, start + delay);
-    volume.gain.exponentialRampToValueAtTime(.12, start + delay + .04);
-    volume.gain.exponentialRampToValueAtTime(.001, start + delay + .45);
-    oscillator.connect(volume).connect(context.destination);
-    oscillator.start(start + delay);
-    oscillator.stop(start + delay + .46);
-  }
-  window.setTimeout(() => void context.close(), 900);
-}
 
 function App() {
   const [page, setPage] = useState<Page>('today');
@@ -76,14 +56,14 @@ function App() {
     let closed = false;
     let pending = false;
     async function pulse() {
-      if (pending || operation.current || !model.current) return;
+      if (pending || operation.current || !model.current || document.visibilityState !== 'visible') return;
       pending = true;
       const generation = request.current;
       try {
         const update = unwrap(await window.focusflow.pulse());
         if (closed || generation !== request.current || operation.current || !model.current) return;
         const previous = model.current;
-        if (previous.today !== update.today || previous.session?.status !== update.session?.status) {
+        if (previous.today !== update.today || previous.session?.id !== update.session?.id || previous.session?.status !== update.session?.status) {
           await refresh();
         } else if (update.session) {
           const next = { ...previous, ...update };
@@ -94,7 +74,7 @@ function App() {
       finally { pending = false; }
     }
     const interval = window.setInterval(() => void pulse(), 900);
-    const onFocus = () => void pulse();
+    const onFocus = () => { if (!operation.current) void refresh(); };
     const onVisible = () => { if (document.visibilityState === 'visible') onFocus(); };
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisible);
@@ -125,11 +105,26 @@ function App() {
       await refresh();
       if (command.type === 'resolve' || command.type === 'interrupt') setPage('today');
       if (interrupted && !interrupted.task_id) setOverlay({ kind: 'interruptedQuick', session: interrupted });
-      if (feedback[command.type]) setNotice({ message: feedback[command.type]!, error: false });
+      const message = command.type === 'setTaskProgress' && command.percent === 100 ? '任务已提交完成' : feedback[command.type];
+      if (message) setNotice({ message, error: false });
       return true;
     } catch (error) { report(error); return false; }
     finally { operation.current = false; setBusy(false); }
   };
+
+  async function switchWindow(action: () => Promise<Result<void>>) {
+    if (operation.current) return;
+    operation.current = true;
+    setBusy(true);
+    try { unwrap(await action()); }
+    catch (error) { report(error); }
+    finally { operation.current = false; setBusy(false); }
+  }
+
+  const mini = window.focusflow.mini;
+  const launcher = window.focusflow.launcher;
+  const openMini = mini ? () => void switchWindow(() => mini.setMode(true)) : undefined;
+  const collapseToLauncher = launcher ? () => void switchWindow(() => launcher.act('collapse')) : undefined;
 
   async function backup(action: 'import' | 'export') {
     if (operation.current) return;
@@ -160,23 +155,31 @@ function App() {
   if (!data) return <main className="startup"><Logo /><p role={notice ? 'alert' : 'status'}>{notice?.message ?? '正在读取本地数据…'}</p>
     {notice && <Button onClick={() => { setNotice(undefined); void refresh(); }}>重试</Button>}</main>;
   if (data.session) return <><Focus key={data.session.id} session={data.session} serverNow={data.now} notes={data.todayData.thoughts}
-    busy={busy} run={run} recovered={restored === data.session.id} />{toast}</>;
+    busy={busy} run={run} recovered={restored === data.session.id} openMini={openMini} collapseToLauncher={collapseToLauncher} />{toast}</>;
 
   const date = page === 'calendar' ? day ?? data.today : data.today;
   const selectedData = page === 'calendar' ? data.selectedData : data.todayData;
   const actions = { busy, run, add: (title?: string) => setOverlay({ kind: 'task', title }), edit: (task: Task) => setOverlay({ kind: 'task', task }),
-    remove: (task: Task) => setOverlay({ kind: 'remove', task }), start: (task?: Task) => setOverlay({ kind: 'focus', task }), notes: () => setOverlay({ kind: 'notes' }) };
+    remove: (task: Task) => setOverlay({ kind: 'remove', task }), start: (task?: Task) => setOverlay({ kind: 'focus', task }), notes: () => setOverlay({ kind: 'notes' }),
+    track: window.focusflow.tracking ? (task: Task) => setOverlay({ kind: 'tracking', task, editable: date >= data.today }) : undefined };
   return <div className="app-layout">
     <aside className="sidebar"><Logo /><nav aria-label="主导航">{pages.map(([key, label, Icon]) => <button type="button" key={key}
-      aria-label={label} title={label} aria-current={page === key ? 'page' : undefined} onClick={() => navigate(key)}><Icon size={20} aria-hidden /><span>{label}</span></button>)}</nav>
+      aria-label={label} title={label} aria-current={page === key ? 'page' : undefined} onClick={() => navigate(key)}><Icon size={20} aria-hidden /><span>{label}</span></button>)}
+      {openMini && <button type="button" aria-label="悬浮小窗" title="悬浮小窗" disabled={busy} onClick={openMini}>
+        <PictureInPicture2 size={20} aria-hidden /><span>悬浮小窗</span>
+      </button>}
+      {collapseToLauncher && <button type="button" aria-label="收起到启动器" title="收起到启动器" disabled={busy} onClick={collapseToLauncher}>
+        <PanelTop size={20} aria-hidden /><span>收起到启动器</span>
+      </button>}</nav>
       <div className="sidebar-footer"><span />本地工作区</div>
     </aside>
     {page === 'today' && <Today data={data} actions={actions} />}
     {page === 'calendar' && <Calendar data={data} month={month ?? firstOfMonth(data.today)} date={date}
       setMonth={setMonth} select={select} reset={() => select(data.today)} actions={actions} />}
     {page === 'settings' && <Settings key={JSON.stringify(data.settings)} settings={data.settings} dataPath={data.dataPath} run={run} backup={backup} busy={busy} />}
-    {overlay?.kind === 'task' && <TaskForm task={overlay.task} title={overlay.title} date={date} minimum={data.today} onClose={close}
+    {overlay?.kind === 'task' && <TaskForm task={overlay.task} title={overlay.title} date={date} minimum={data.today} tracking={Boolean(window.focusflow.tracking)} onClose={close}
       onSave={(task) => run({ type: 'saveTask', id: overlay.task?.id, task })} />}
+    {overlay?.kind === 'tracking' && <TrackingDialog task={overlay.task} today={data.today} editable={overlay.editable} run={run} onClose={close} />}
     {overlay?.kind === 'remove' && overlay.task && <Modal title="删除任务" onClose={close}>
       <p>删除「{overlay.task.title}」？已记录的番茄专注历史会保留。</p><footer><Button onClick={close}>取消</Button>
         <Button variant="danger" disabled={busy} onClick={async () => {

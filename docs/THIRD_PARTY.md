@@ -9,6 +9,7 @@
 | [Zod](https://github.com/colinhacks/zod) | IPC 输入和应用设置校验 | MIT |
 | [Lucide](https://github.com/lucide-icons/lucide) | 界面线性图标，包含其上游图标许可 | ISC，附带上游许可声明 |
 | [Tauri 2](https://github.com/tauri-apps/tauri) 与[官方插件](https://github.com/tauri-apps/plugins-workspace) | 系统 WebView、IPC、对话框、通知、单实例和安装包构建 | MIT 或 Apache-2.0 |
+| [tray-icon](https://github.com/tauri-apps/tray-icon) 与 [windows-sys](https://github.com/microsoft/windows-rs) | 通过 Tauri 接入系统托盘，并调用 Windows 原生窗口透明度接口 | MIT 或 Apache-2.0 |
 | [rusqlite](https://github.com/rusqlite/rusqlite) 与 [SQLite](https://sqlite.org/copyright.html) | Tauri 后端的本地数据库、事务和升级快照 | rusqlite 为 MIT，SQLite 核心为公有领域 |
 | [Serde](https://github.com/serde-rs/serde)、[Chrono](https://github.com/chronotope/chrono)、[UUID](https://github.com/uuid-rs/uuid) | Rust 数据序列化、日期与记录标识 | MIT 或 Apache-2.0 |
 | [Electron](https://github.com/electron/electron) 与 [Node.js](https://github.com/nodejs/node) | 0.10 桌面运行时、系统集成和 `node:sqlite` | MIT，Chromium 等组件另附许可 |

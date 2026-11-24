@@ -128,8 +128,15 @@ pub struct TaskInput {
     pub title: String,
     pub description: String,
     pub scheduled_date: String,
+    pub end_date: Option<String>,
     pub pomodoro_enabled: bool,
     pub planned_pomodoros: i64,
+}
+
+impl TaskInput {
+    pub fn deadline(&self) -> &str {
+        self.end_date.as_deref().unwrap_or(&self.scheduled_date)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -152,6 +159,10 @@ pub enum Command {
     MoveTask {
         id: String,
         direction: i64,
+    },
+    SetTaskProgress {
+        id: String,
+        percent: i64,
     },
     SaveThought {
         id: Option<String>,
@@ -199,6 +210,15 @@ impl Command {
                 clean_text(&mut task.title, 1, 200)?;
                 clean_text(&mut task.description, 0, 2000)?;
                 parse_date(&task.scheduled_date)?;
+                if let Some(end) = &task.end_date {
+                    parse_date(end)?;
+                    if end < &task.scheduled_date {
+                        return Err(Error::User("截止日期不能早于开始日期。"));
+                    }
+                    if end == &task.scheduled_date {
+                        task.end_date = None;
+                    }
+                }
                 if !(1..=12).contains(&task.planned_pomodoros) {
                     return Err(BAD_INPUT);
                 }
@@ -212,6 +232,12 @@ impl Command {
             Self::MoveTask { id, direction } => {
                 check_id(id)?;
                 if !matches!(*direction, -1 | 1) {
+                    return Err(BAD_INPUT);
+                }
+            }
+            Self::SetTaskProgress { id, percent } => {
+                check_id(id)?;
+                if !(0..=100).contains(percent) {
                     return Err(BAD_INPUT);
                 }
             }
@@ -253,6 +279,7 @@ impl Command {
                 | Self::ToggleTask { .. }
                 | Self::DeleteTask { .. }
                 | Self::MoveTask { .. }
+                | Self::SetTaskProgress { .. }
                 | Self::Start { .. }
                 | Self::SaveInterruptedQuick { .. }
                 | Self::Settings { .. }
@@ -266,6 +293,8 @@ pub struct Task {
     pub title: String,
     pub description: String,
     pub scheduled_date: String,
+    pub end_date: Option<String>,
+    pub progress: i64,
     pub status: String,
     pub pomodoro_enabled: i64,
     pub planned_pomodoros: i64,
@@ -275,6 +304,30 @@ pub struct Task {
     pub updated_at: i64,
     pub completed_at: Option<i64>,
     pub deleted_at: Option<i64>,
+}
+
+impl Task {
+    pub fn deadline(&self) -> &str {
+        self.end_date.as_deref().unwrap_or(&self.scheduled_date)
+    }
+
+    pub fn covers(&self, day: &str) -> bool {
+        self.scheduled_date.as_str() <= day && day <= self.deadline()
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct TaskProgressDay {
+    pub date: String,
+    pub percent: Option<i64>,
+    pub pomodoros: i64,
+    pub focus_seconds: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TaskTracking {
+    pub progress: i64,
+    pub days: Vec<TaskProgressDay>,
 }
 
 #[derive(Debug, Serialize)]
@@ -306,6 +359,7 @@ pub struct DayRecord {
     pub unfinished_tasks: i64,
     pub total_completed_pomodoros: i64,
     pub total_focus_seconds: i64,
+    pub spanning_tasks: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -350,6 +404,15 @@ pub struct Pulse {
     pub now: i64,
     pub today: String,
     pub session: Option<ActiveSession>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MiniView {
+    #[serde(flatten)]
+    pub pulse: Pulse,
+    pub theme: Theme,
+    pub focus_minutes: i64,
 }
 
 #[derive(Debug, Serialize)]
