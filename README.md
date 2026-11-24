@@ -1,41 +1,66 @@
-# FocusFlow 桌面版 0.12
+<p align="center">
+  <img src="assets/icon.png" alt="FocusFlow 图标" width="72" height="72">
+</p>
 
-FocusFlow 是适用于 Windows 和 macOS 的本地日历待办与番茄时钟。可以安排单日或多天任务、查看历史记录，并在置顶小窗里继续专注。
+<h1 align="center">FocusFlow</h1>
 
-桌面版基于 Tauri 2，数据保存在本地 SQLite 中，可导出 JSON 备份。系统要求、构建和旧数据升级流程见 [Tauri 迁移指南](docs/TAURI_MIGRATION.md)。
+<p align="center">
+  <strong>本地日历、待办与番茄时钟</strong>
+  <br>在日历里安排任务，按天跟踪进度，在置顶小窗里继续专注。
+</p>
 
-## 下载与安装
+<p align="center">
+  <a href="https://github.com/LenchLyu/focusflow-desktop/releases/download/v0.12.0/FocusFlow_0.12.0_x64-setup.exe"><strong>下载 Windows 版</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/LenchLyu/focusflow-desktop/releases/download/v0.12.0/FocusFlow_0.12.0_universal.dmg"><strong>下载 macOS 版</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/LenchLyu/focusflow-desktop/releases/tag/v0.12.0" title="v0.12.0 发布说明">v0.12.0</a>
+</p>
 
-| 平台 | 下载 | 安装 |
-| --- | --- | --- |
-| Windows x64 | [EXE 安装程序](https://github.com/LenchLyu/focusflow-desktop/releases/download/v0.12.0/FocusFlow_0.12.0_x64-setup.exe) | 双击安装程序，完成后从开始菜单打开 FocusFlow。 |
-| macOS 12+（Intel 和 Apple Silicon） | [Universal DMG](https://github.com/LenchLyu/focusflow-desktop/releases/download/v0.12.0/FocusFlow_0.12.0_universal.dmg) | 打开磁盘镜像，把 FocusFlow 拖入「应用程序」。 |
-
-从 0.10 或 0.11 升级时，先导出 JSON 备份并完全退出旧版。新版首次打开旧数据库前会生成 SQLite 快照。
-
-Windows 安装程序使用系统 WebView2，缺少时会下载引导程序。Windows 安装程序未经数字签名，Mac 应用采用临时签名，尚未经过 Apple 公证。校验文件和版本说明见 [v0.12.0 发布页](https://github.com/LenchLyu/focusflow-desktop/releases/tag/v0.12.0)。
+<p align="center">
+  <a href="#界面截图">界面截图</a>
+  &nbsp;·&nbsp;
+  <a href="#下载与安装">安装说明</a>
+  &nbsp;·&nbsp;
+  <a href="#使用手册">使用手册</a>
+  &nbsp;·&nbsp;
+  <a href="#开发与打包">开发与打包</a>
+</p>
 
 ## 界面截图
 
-以下是 FocusFlow 0.10.0 的 Windows 界面，任务和想法均为演示数据。
+<p align="center">
+  <img src="docs/screenshots/today.png" alt="今日待办首页，显示添加任务入口、待完成任务和番茄统计">
+  <br><sub>今日待办</sub>
+</p>
 
-### 今日待办
+<p align="center">
+  <a href="docs/screenshots/focus.png"><img src="docs/screenshots/focus.png" alt="番茄专注页，左侧是倒计时，右侧是番茄想法" width="49%"></a>
+  <a href="docs/screenshots/calendar.png"><img src="docs/screenshots/calendar.png" alt="月历和选中日期的任务完成情况" width="49%"></a>
+  <br><sub>番茄专注与月历</sub>
+</p>
 
-![FocusFlow 今日待办首页，显示添加任务入口、待完成任务和番茄统计](docs/screenshots/today.png)
+<sub>截图来自 Windows 0.10.0，任务和想法均为演示数据。</sub>
 
-### 番茄专注
+## 下载与安装
 
-![FocusFlow 专注页面，左侧显示倒计时和当前番茄，右侧显示番茄想法](docs/screenshots/focus.png)
+| 平台与安装包 | 安装方式 |
+| --- | --- |
+| **Windows x64**<br>EXE · 2.50&nbsp;MiB | 双击安装程序，完成后从开始菜单打开 FocusFlow。 |
+| **macOS 12+** · Intel 和 Apple Silicon<br>通用 DMG · 6.13&nbsp;MiB | 打开 DMG，把 FocusFlow 拖入「应用程序」。 |
 
-### 月历与日期详情
+> [!NOTE]
+> 从 0.10 或 0.11 升级时，先导出 JSON 备份并完全退出旧版。新版首次打开旧数据库前会生成 SQLite 快照。
 
-![FocusFlow 月历，选中日期后右侧显示任务完成情况和未来计划](docs/screenshots/calendar.png)
+Windows 安装程序使用系统 WebView2，缺少时会下载引导程序。Windows 安装程序未经数字签名，Mac 应用采用临时签名，Apple 公证待完成。[SHA-256 校验文件](https://github.com/LenchLyu/focusflow-desktop/releases/download/v0.12.0/SHA256SUMS.txt)
 
 ## 使用手册
 
-### 添加与管理任务
+### 添加任务与跟踪进度
 
-在「今日待办」输入任务名，按 **Enter** 保存。需要写描述、改日期或安排番茄数时，点「详细添加」，再点「保存任务」。已建任务可用任务行右侧的按钮上移、下移、编辑或删除，点左侧勾选框可以完成或撤销完成。
+- **今日待办** · 输入任务名，按 **Enter** 保存。通过任务行按钮排序、编辑或删除，勾选左侧复选框可完成或撤销完成。
+- **详细添加** · 填写描述、计划日期和番茄数后，点「保存任务」。多天任务需填写开始和截止日期，随后可在「跟踪进度」中按天更新进度、查看番茄记录或提前提交完成。
+- **日历** · 选中未来日期后点「为这天添加任务」。到计划日，任务会出现在「今日待办」。选择过去的日期可查看已完成和未完成任务、专注记录与番茄想法。跨日后，未完成任务会留在原日期的记录里。
 
 ### 开始一次专注
 
@@ -43,42 +68,48 @@ Windows 安装程序使用系统 WebView2，缺少时会下载引导程序。Win
 2. 默认每轮专注 25 分钟，短休息 5 分钟。每完成 4 轮且还有后续番茄时，默认长休息 15 分钟。每个阶段结束后按界面提示继续。
 3. 专注结束后，在总结里确认任务是否完成。快速专注还可以把事项加入今日待办。
 
-灵感可以记在「番茄想法」里，按 **Ctrl + Enter** 保存。需要中止时，点「打断番茄」并填写原因，已完成的轮次和想法会保留。应用关闭后重开会恢复计时阶段，已经到期的阶段会等待你确认下一步。
+在「番茄想法」中记录灵感，按 **Ctrl + Enter** 保存。需要中止时，点「打断番茄」并填写原因，已完成的轮次和想法会保留。应用重开后会恢复计时阶段，已经到期的阶段会等待你确认下一步。
 
-在倒计时下方点「缩成小窗」，主窗口会隐藏，同一轮计时在置顶小窗中继续。可以拖动小窗边缘调整大小，也可以直接在小窗内打断专注。Windows 上的小窗以半透明方式显示。
+### 悬浮小窗与系统托盘
 
-Windows 启动后会在系统托盘显示 FocusFlow 图标。关闭主窗口会收至托盘，右键图标可以重新打开主窗口、计时小窗或退出应用。
-
-### 安排未来任务与回顾历史
-
-在侧栏打开「日历」，选中日期后点「为这天添加任务」。到期当天，任务会自动出现在「今日待办」。选择过去的日期可以查看已完成和未完成任务、专注记录与番茄想法。跨日后，未完成任务会留在原日期的记录里。
-
-在「详细添加」中勾选「多天任务」，填写开始和截止日期。点击任务的「跟踪进度」可以按天更新进度、查看番茄记录，也可以在截止日前提交完成。
+- **缩成小窗** · 专注页倒计时下方的按钮会隐藏主窗口，同一轮计时在置顶小窗中继续。可拖动小窗边缘调整大小，也可直接在小窗内打断专注。Windows 上的小窗以半透明方式显示。
+- **收起到启动器** · 将主窗口或小窗收成悬浮工具条，随时打开主窗口或番茄小窗。
+- **Windows 系统托盘** · FocusFlow 启动时会注册图标，关闭主窗口后继续运行。用右键菜单打开主窗口、计时小窗或退出应用。
 
 ### 调整设置与备份
 
-在「设置」里调整专注时长、休息规则、提示音、系统通知和外观，再点「保存设置」。Windows 默认数据目录是 `%APPDATA%\FocusFlow`。在「本地数据」中点「导出 JSON 备份」可以保存一份副本。点「恢复 JSON 备份」会用备份替换当前数据，应用会先生成一份 `before-restore-*.json` 回滚备份。
+在「设置」里调整专注时长、休息规则、提示音、系统通知和外观，再点「保存设置」。在「本地数据」中可导出或恢复 JSON 备份。恢复会替换当前数据，应用会先生成 `before-restore-*.json` 回滚备份。
 
 ## 开发与打包
 
-开发环境需要 Node.js 24、Rust 1.100 和目标系统的开发工具。在仓库根目录执行以下命令。
+开发环境需要 **Node.js 24**、**Rust 1.100** 和目标系统的开发工具。系统依赖与升级流程见 [Tauri 迁移指南](docs/TAURI_MIGRATION.md)。
 
-```powershell
+```sh
 npm ci
-npm run build:frontend
 npm run dev
 npm test
-npm run build:win
-npm run test:e2e
 ```
 
-`npm run build:frontend` 生成 `dist/frontend/`。Windows NSIS 安装包由 `npm run build:win` 生成。Mac 上使用 `npm run build:mac` 构建 Universal DMG。`npm run dev:electron` 和 `npm run package:win` 用于 Electron 回退版。
+| 用途 | 命令 |
+| --- | --- |
+| 构建前端到 `dist/frontend/` | `npm run build:frontend` |
+| 构建 Windows NSIS 安装包 | `npm run build:win` |
+| 在 Mac 上构建通用 DMG | `npm run build:mac` |
+| 验证 Windows WebView2 应用 | `npm run test:e2e` |
+| 开发或打包 Electron 回退版 | `npm run dev:electron` / `npm run package:win` |
 
 `npm run test:e2e` 在隔离数据库中测试 Windows WebView2 应用。可用 `FOCUSFLOW_E2E_EXECUTABLE` 指定要验收的安装版。
 
 ## 数据与实现
 
-数据库文件为 `focusflow.sqlite3`。Windows 默认数据目录为 `%APPDATA%\FocusFlow`，macOS 为 `~/Library/Application Support/FocusFlow`。可使用 `--user-data-dir=绝对路径` 指定隔离的测试目录。项目沿用早期 FocusFlow Obsidian 插件的 React、TypeScript 和 esbuild 前端技术栈。
+桌面版基于 Tauri 2，界面沿用早期 FocusFlow Obsidian 插件的 React、TypeScript 和 esbuild 技术栈。数据保存在本地 `focusflow.sqlite3` 中。
+
+| 平台 | 默认数据目录 |
+| --- | --- |
+| Windows | `%APPDATA%\FocusFlow` |
+| macOS | `~/Library/Application Support/FocusFlow` |
+
+可使用 `--user-data-dir=绝对路径` 指定隔离的测试目录。
 
 - `src-tauri/src/db/` 管理 SQLite 初始化和升级快照。0.12 将数据库结构升级到版本 2，并兼容 0.10 和 0.11 导出的 JSON 备份。
 - `src-tauri/src/pomodoro.rs` 管理专注状态、截止时间和轮次计数。轮次归入截止时刻对应的本地日期，任务保留自己的计划日期。
